@@ -28,12 +28,11 @@ void serve (char * folder, int port) {
         int client = accept(server, (struct sockaddr *) & sock, & len);
         char buffer[4096];
         read(client, buffer, 4096);
-        char * start = strchr(buffer, ' ') + 1;
-        int length = strchr(start, ' ') - start;
+        char * p = strchr(buffer, ' ') + 1;
+        int length = strchr(p, ' ') - p;
         char file[length + 1];
-        strncpy(file, start, length);
+        strncpy(file, p, length);
         file[length] = '\0';
-        char * p;
         while ((p = strstr(file, "%20"))) {
             memcpy(p, " ", 1);
             memmove(p + 1, p + 3, strlen(p + 3) + 1);
@@ -58,16 +57,11 @@ void serve (char * folder, int port) {
         }
         FILE * f = fopen(path, "r");
         if (f) {
-            fseek(f, 0, SEEK_END);
-            length = ftell(f);
-            rewind(f);
-            char * content = malloc(length);
-            fread(content, 1, length, f);
+            dprintf(client, "HTTP/1.\ncontent-type:%s\n\n", type);
+            while ((length = fread(buffer, 1, 4096, f)) > 0) {
+                send(client, buffer, length, 0);
+            }
             fclose(f);
-            length += strlen(type) + 24;
-            char * response = malloc(length);
-            snprintf(response, length, "HTTP/1.\ncontent-type:%s\n\n%s", type, content);
-            send(client, response, length - 1, 0);
         }
         close(client);
     }

@@ -57,19 +57,6 @@ void set (map * a, char * key, char * value) {
     a->pairs[a->length++] = p;
 }
 
-char * replace (char * str, char * past, char * next) {
-    int len1 = strlen(past);
-    int len2 = strlen(next);
-    char * p;
-    while ((p = strstr(str, past))) {
-        if (len1 != len2) {
-            memmove(p + len2, p + len1, strlen(p + len1) + 1);
-        }
-        memcpy(p, next, len2);
-    }
-    return str;
-}
-
 char * lstrip (char * str) {
     while (* str == '\t' || * str == ' ') {
         str++;
@@ -108,7 +95,8 @@ char * first_not_of (char * str) {
 }
 
 char ** splits (char * str, char * delimiter, int * length) {
-    char * buffer = strdup(str);
+    char * buffer = malloc(strlen(str) + 1);
+    strcpy(buffer, str);
     int i = 0;
     char * p = strtok(str, delimiter);
     while (p) {
@@ -188,7 +176,7 @@ char * substitute (char * text, char * past, char * next) {
     while (p) {
         a = p - text;
         if (strlen(text) < a + i + 1) {
-            return text;
+            break;
         }
         if (strchr(base64, text[a + i]) || (a != 0 && (strchr(base64, text[a - 1]) || strchr("\"'.", text[a - 1])))) {
             p = strstr(text + a + i, past);
@@ -214,12 +202,6 @@ void parse (char * file, map * modules, map * texts) {
     fread(text, 1, length, f);
     fclose(f);
     text[length] = '\0';
-    while (strstr(text, " \n")) {
-        text = replace(text, " \n", "\n");
-    }
-    while (strstr(text, "\n\n")) {
-        text = replace(text, "\n\n", "\n");
-    }
     char * lines = text;
     bool remove = false;
     text = malloc(strlen(text) + 2);
@@ -230,22 +212,22 @@ void parse (char * file, map * modules, map * texts) {
             line = strtok(0, "\n");
             continue;
         }
-        char * ip = strstr(line, "/*");
-        if (!remove && ip && !strstr(line, "//*")) {
-            char * jp = strstr(line, "*/");
-            if (jp) {
+        char * i = strstr(line, "/*");
+        if (!remove && i && !strstr(line, "//*")) {
+            char * j = strstr(line, "*/");
+            if (j) {
                 length = strlen(line) + 2;
                 char * str = malloc(length);
-                snprintf(str, length, "%s%s%s", substr(line, 0, ip - line), " ", substrs(line, jp - line + 2));
+                snprintf(str, length, "%s%s%s", substr(line, 0, i - line), " ", substrs(line, j - line + 2));
                 line = str;
             } else {
-                line = substr(line, 0, ip - line);
+                line = substr(line, 0, i - line);
                 remove = true;
             }
         }
         if (remove) {
-            if ((ip = strstr(line, "*/"))) {
-                line = substrs(line, ip - line + 2);
+            if ((i = strstr(line, "*/"))) {
+                line = substrs(line, i - line + 2);
                 remove = false;
             } else {
                 line = strtok(0, "\n");
@@ -295,9 +277,8 @@ void parse (char * file, map * modules, map * texts) {
                     break;
                 }
                 i += 4;
-                jp = substrs(text, i);
-                ip = strstr(jp, "from");
-                i += ip - jp;
+                ip = substrs(text, i);
+                i += strstr(ip, "from") - ip;
             }
             int j = 0, k;
             char * t = substr(text, 0, i);
@@ -364,12 +345,12 @@ void parse (char * file, map * modules, map * texts) {
     while ((ip = strstr(text, "export "))) {
         int i = ip - text;
         text = substrs(text, i + 7);
-        for (int j = 0; j < 7; j++) {
-            char * name = declares[j];
+        for (i = 0; i < 7; i++) {
+            char * name = declares[i];
             ip = strstr(text, name);
-            i = ip - text;
-            if (ip && i < 3) {
-                text = substrs(text, i + strlen(name));
+            int j = ip - text;
+            if (ip && j < 3) {
+                text = substrs(text, j + strlen(name));
             }
         }
         char * names = "";
@@ -384,8 +365,7 @@ void parse (char * file, map * modules, map * texts) {
         length = 0;
         if (i < strlen(names) && names[i] == '{') {
             names = substrs(names, i + 1);
-            ip = strchr(names, '}');
-            split = splits(substr(names, 0, ip - names), ",", & length);
+            split = splits(substr(names, 0, strchr(names, '}') - names), ",", & length);
         } else {
             ip = strchr(names, '(');
             i = ip - names;
@@ -513,7 +493,7 @@ void build (char * file, char * output) {
         }
         if (import) {
             parse(file, & modules, & texts);
-            char * mods_string = strdup(get(& modules, file));
+            char * mods_string = get(& modules, file);
             if (mods_string) {
                 int length = 0;
                 char ** mods = splits(mods_string, "\n", & length);

@@ -57,7 +57,10 @@ void serve (char * folder, int port) {
         }
         FILE * f = fopen(path, "r");
         if (f) {
-            dprintf(client, "HTTP/1.\ncontent-type:%s\n\n", type);
+            length = strlen(type) + 24;
+            char * header = malloc(length);
+            snprintf(header, length, "%s%s%s", "HTTP/1.\ncontent-type:", type, "\n\n");
+            send(client, header, length - 1, 0);
             while ((length = fread(buffer, 1, 4096, f)) > 0) {
                 send(client, buffer, length, 0);
             }

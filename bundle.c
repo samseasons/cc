@@ -31,7 +31,7 @@ void delete (map * a, char * key) {
             for (int j = i; j < a->length; j++) {
                 a->pairs[j] = a->pairs[j + 1];
             }
-            break;
+            return;
         }
     }
 }
@@ -167,7 +167,7 @@ char * resolve (char * f, char * file) {
     return f;
 }
 
-char * substitute (char * text, char * past, char * next) {
+char * substitute (char * next, char * past, char * text) {
     int a = 0;
     int i = strlen(past);
     int j = strlen(next);
@@ -175,9 +175,6 @@ char * substitute (char * text, char * past, char * next) {
     char * p = strstr(text, past);
     while (p) {
         a = p - text;
-        if (strlen(text) < a + i + 1) {
-            break;
-        }
         if (strchr(base64, text[a + i]) || (a != 0 && (strchr(base64, text[a - 1]) || strchr("\"'.", text[a - 1])))) {
             p = strstr(text + a + i, past);
             continue;
@@ -327,7 +324,6 @@ void parse (char * file, map * modules, map * texts) {
     }
     char * mods = malloc(order_size);
     strcpy(mods, "");
-    set(modules, file, "");
     for (int i = 0; i < order_length; i++) {
         char * f = order[i];
         if (!get(texts, f)) {
@@ -433,7 +429,7 @@ void parse (char * file, map * modules, map * texts) {
             int len = strlen(name) + strlen(path) + 2;
             char * next = malloc(len);
             snprintf(next, len, "%s%s%s", name, "_", path);
-            text = substitute(text, name, next);
+            text = substitute(next, name, text);
         }
     }
     lines = text;

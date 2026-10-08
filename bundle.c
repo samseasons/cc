@@ -167,21 +167,21 @@ char * resolve (char * f, char * file) {
     return f;
 }
 
-char * substitute (char * next, char * past, char * text) {
-    int a = 0;
-    int i = strlen(past);
+char * substitute (char * match, char * next, char * text) {
+    int a;
+    int i = strlen(match);
     int j = strlen(next);
     text = realloc(text, strlen(text) * j / i);
-    char * p = strstr(text, past);
+    char * p = strstr(text, match);
     while (p) {
         a = p - text;
         if (strchr(base64, text[a + i]) || (a != 0 && (strchr(base64, text[a - 1]) || strchr("\"'.", text[a - 1])))) {
-            p = strstr(text + a + i, past);
-            continue;
+            p = strstr(text + a + i, match);
+        } else {
+            memmove(text + a + j, p + i, strlen(text + a + i) + 1);
+            memcpy(text + a, next, j);
+            p = strstr(text + a + j, match);
         }
-        memmove(text + a + j, p + i, strlen(text + a + i) + 1);
-        memcpy(text + a, next, j);
-        p = strstr(text + a + j, past);
     }
     return text;
 }
@@ -232,14 +232,15 @@ void parse (char * file, map * modules, map * texts) {
             }
         }
         line = rstrip(line);
-        if (line) {
+        if (strlen(line) != 0) {
             strcat(text, line);
             strcat(text, "\n");
         }
         line = strtok(0, "\n");
     }
-    map files = amap();
-    set(& files, file, "");
+    map defaults = amap();
+    map exports = amap();
+    set(& exports, file, "");
     char ** order = malloc(1);
     int order_length = 0;
     int order_size = 1;
@@ -258,16 +259,17 @@ void parse (char * file, map * modules, map * texts) {
         while (text[i] == ' ') {
             i++;
         }
+        char * defaulted = "";
+        map names = amap();
+        int names_size = 1;
         text = substrs(text, i);
         ip = strstr(text, "from");
         i = ip - text;
         char * jp = strchr(text, '"');
         char * kp = strchr(text, '\'');
-        char ** names = malloc(sizeof_char_p);
-        int names_length = 0;
-        int names_size = 1;
         if (ip && (!jp || i < jp - text) && (!kp || i < kp - text)) {
-            while (i < strlen(text)) {
+            length = strlen(text);
+            while (i < length) {
                 char j = text[i - 1];
                 char k = text[i + 4];
                 if ((j == ' ' || j == '}') && (k == ' ' || k == '"' || k == '\'')) {
@@ -277,22 +279,35 @@ void parse (char * file, map * modules, map * texts) {
                 ip = substrs(text, i);
                 i += strstr(ip, "from") - ip;
             }
-            int j = 0, k;
-            char * t = substr(text, 0, i);
-            while ((k = find_first_of(t, " ,{}", j)) != -1) {
-                if (j < k) {
-                    char * name = substr(t, j, k - j);
-                    names_size += strlen(name) + 1;
-                    names = realloc(names, (names_length + 1) * sizeof_char_p);
-                    names[names_length++] = name;
+            char * variables = substr(text, 0, i);
+            if ((jp = strchr(variables, '{'))) {
+                int j = jp - variables;
+                kp = strchr(variables, '}');
+                length = 0;
+                char ** split = splits(substr(variables, j + 1, kp - variables - j - 1), ",", & length);
+                variables = substr(variables, 0, j);
+                for (j = 0; j < length; j++) {
+                    char * name = rstrip(lstrip(split[j]));
+                    kp = strstr(name, " as ");
+                    if (kp) {
+                        int k = kp - name;
+                        names_size += strlen(name) - 2;
+                        set(& names, substr(name, 0, k), substrs(name, k + 4));
+                    } else if (strlen(name) != 0) {
+                        names_size += strlen(name) * 2 + 2;
+                        set(& names, name, name);
+                    }
                 }
-                j = k + 1;
             }
-            if (j > strlen(t)) {
-                char * name = substrs(t, j);
-                names_size += strlen(name) + 1;
-                names = realloc(names, (names_length + 1) * sizeof_char_p);
-                names[names_length++] = name;
+            char * name = variables;
+            if ((jp = strchr(name, ','))) {
+                name = substr(name, 0, jp - name);
+            }
+            name = rstrip(lstrip(name));
+            if (strlen(name) != 0) {
+                defaulted = name;
+                names_size += strlen(name) * 2 + 2;
+                set(& names, name, name);
             }
             i += 5;
             while (text[i] == ' ') {
@@ -306,34 +321,43 @@ void parse (char * file, map * modules, map * texts) {
             text = substrs(text, i + 1);
             ip = strchr(text, f);
             char * f = resolve(substr(text, 0, ip - text), file);
-            char * imported = get(& files, f);
+            char * imported = get(& exports, f);
             if (!imported) {
                 imported = "";
                 order = realloc(order, (order_length + 1) * sizeof_char_p);
                 order[order_length++] = f;
                 order_size += strlen(f) + 1;
             }
+            if (strlen(defaulted) != 0) {
+                set(& defaults, f, defaulted);
+            }
             char * imports = malloc(strlen(imported) + names_size);
             strcpy(imports, imported);
-            for (int j = 0; j < names_length; j++) {
-                strcat(imports, names[j]);
+            for (int j = 0, length = names.length; j < length; j++) {
+                strcat(imports, names.pairs[j]->key);
+                strcat(imports, " ");
+                strcat(imports, names.pairs[j]->value);
                 strcat(imports, "\n");
             }
-            set(& files, f, imports);
+            set(& exports, f, imports);
         }
     }
+    int dependencies = 0;
     char * mods = malloc(order_size);
-    strcpy(mods, "");
+    mods[0] = '\0';
     for (int i = 0; i < order_length; i++) {
         char * f = order[i];
         if (!get(texts, f)) {
             strcat(mods, f);
             strcat(mods, "\n");
             if (!get(modules, f)) {
-                set(modules, file, mods);
-                return;
+                dependencies = 1;
             }
         }
+    }
+    if (dependencies) {
+        set(modules, file, mods);
+        return;
     }
     char declares[7][9] = {"async", "class", "const", "default", "function", "let", "var"};
     char defines[6] = {'\n', ' ', '(', ',', '.', '['};
@@ -341,6 +365,9 @@ void parse (char * file, map * modules, map * texts) {
     while ((ip = strstr(text, "export "))) {
         int i = ip - text;
         text = substrs(text, i + 7);
+        if (strstr(text, "default ") - text == 0) {
+            continue;
+        }
         for (i = 0; i < 7; i++) {
             char * name = declares[i];
             ip = strstr(text, name);
@@ -349,71 +376,72 @@ void parse (char * file, map * modules, map * texts) {
                 text = substrs(text, j + strlen(name));
             }
         }
-        char * names = "";
         if ((ip = strchr(text, '\n'))) {
-            names = substr(text, 0, ip - text);
-        }
-        i = 0;
-        while (i < strlen(names) && names[i] == ' ') {
-            i++;
-        }
-        char ** split = malloc(sizeof_char_p);
-        length = 0;
-        if (i < strlen(names) && names[i] == '{') {
-            names = substrs(names, i + 1);
-            split = splits(substr(names, 0, strchr(names, '}') - names), ",", & length);
-        } else {
-            ip = strchr(names, '(');
-            i = ip - names;
-            char * jp = strchr(names, '=');
-            int j = jp - names;
-            if (!jp || (i < j && ip)) {
-                split[length++] = names;
+            char * variables = substr(text, 0, ip - text);
+            i = 0;
+            length = strlen(variables);
+            while (i < length && variables[i] == ' ') {
+                i++;
+            }
+            char ** split = malloc(sizeof_char_p);
+            if (i < length && variables[i] == '{') {
+                length = 0;
+                variables = substrs(variables, i + 1);
+                split = splits(substr(variables, 0, strchr(variables, '}') - variables), ",", & length);
             } else {
-                while (jp && names[j + 1] != '>') {
-                    split = realloc(split, (length + 1) * sizeof_char_p);
-                    split[length++] = substr(names, 0, j);
-                    names = substrs(names, j);
-                    if (!(jp = strchr(names, ','))) {
-                        break;
+                ip = strchr(variables, '(');
+                i = ip - variables;
+                char * jp = strchr(variables, '=');
+                int j = jp - variables;
+                length = 0;
+                if (!jp || (i < j && ip)) {
+                    split[length++] = variables;
+                } else {
+                    while (jp && variables[j + 1] != '>') {
+                        split = realloc(split, (length + 1) * sizeof_char_p);
+                        split[length++] = substr(variables, 0, j);
+                        variables = substrs(variables, j);
+                        if (!(jp = strchr(variables, ','))) {
+                            break;
+                        }
+                        variables = substrs(variables, jp - variables);
+                        jp = strchr(variables, '=');
+                        j = jp - variables;
                     }
-                    names = substrs(names, jp - names);
-                    jp = strchr(names, '=');
-                    j = jp - names;
                 }
             }
-        }
-        char * f = get(& files, file);
-        for (i = 0; i < length; i++) {
-            char * name = split[i];
-            bool subs = true;
-            while (strlen(name) && subs) {
-                char n = name[0];
-                subs = false;
+            char * f = get(& exports, file);
+            for (i = 0; i < length; i++) {
+                char * name = split[i];
+                bool subs = true;
+                while (strlen(name) != 0 && subs) {
+                    char n = name[0];
+                    subs = false;
+                    for (int j = 0; j < 6; j++) {
+                        if (defines[j] == n) {
+                            name = substrs(name, 1);
+                            subs = true;
+                            break;
+                        }
+                    }
+                }
                 for (int j = 0; j < 6; j++) {
-                    if (defines[j] == n) {
-                        name = substrs(name, 1);
-                        subs = true;
-                        break;
+                    if ((ip = strchr(name, defines[j]))) {
+                        name = substr(name, 0, ip - name);
                     }
                 }
+                int len = strlen(f) + strlen(name) * 2 + 3;
+                char * str = malloc(len);
+                snprintf(str, len, "%s%s%s%s%s", f, name, " ", name, "\n");
+                f = str;
             }
-            for (int j = 0; j < 6; j++) {
-                char * jp = strchr(name, defines[j]);
-                if (jp) {
-                    name = substr(name, 0, jp - name);
-                }
-            }
-            int len = strlen(f) + strlen(name) + 2;
-            char * str = malloc(len);
-            snprintf(str, len, "%s%s%s", f, name, "\n");
-            f = str;
+            set(& exports, file, f);
         }
-        set(& files, file, f);
     }
+    char * defaulted = "";
     text = texta;
-    for (int i = 0, files_length = files.length; i < files_length; i++) {
-        pair * p = files.pairs[i];
+    for (int i = 0, exports_length = exports.length; i < exports_length; i++) {
+        pair * p = exports.pairs[i];
         char * f = p->key;
         length = strlen(f);
         char * path = substr(f, 0, length - 3);
@@ -422,24 +450,42 @@ void parse (char * file, map * modules, map * texts) {
                 path[j] = '_';
             }
         }
+        if (strcmp(f, file) == 0) {
+            defaulted = path;
+        }
         length = 0;
-        char ** names = splits(p->value, "\n", & length);
+        char ** exported = splits(p->value, "\n", & length);
         for (int j = 0; j < length; j++) {
-            char * name = names[j];
-            int len = strlen(name) + strlen(path) + 2;
-            char * next = malloc(len);
-            snprintf(next, len, "%s%s%s", name, "_", path);
-            text = substitute(next, name, text);
+            int exported_length = 0;
+            char ** split = splits(exported[j], " ", & exported_length);
+            char * named = split[0];
+            char * name = split[1];
+            char * module = get(& defaults, f);
+            if (module && strcmp(module, name) == 0) {
+                int len = strlen(path) + 2;
+                char * next = malloc(len);
+                snprintf(next, len, "%s%s", "_", path);
+                text = substitute(name, next, text);
+            } else {
+                int len = strlen(named) + strlen(path) + 2;
+                char * next = malloc(len);
+                snprintf(next, len, "%s%s%s", named, "_", path);
+                text = substitute(name, next, text);
+            }
         }
     }
     lines = text;
-    text = malloc(strlen(text) + 1);
+    text = malloc(strlen(text) + strlen(defaulted) + 5);
     text[0] = '\0';
     line = strtok(lines, "\n");
     while (line) {
         char * a = first_not_of(line);
         if (strncmp(a, "export default ", 15) == 0) {
             line = substrs(line, 15);
+            int len = strlen(defaulted) + strlen(line) + 5;
+            char * b = malloc(len);
+            snprintf(b, len, "%s%s%s%s", "_", defaulted, " = ", line);
+            line = b;
         } else if (strncmp(a, "export ", 7) == 0) {
             line = substrs(line, 7);
             a = first_not_of(line);
@@ -448,7 +494,7 @@ void parse (char * file, map * modules, map * texts) {
                 continue;
             }
         }
-        if (line && strncmp(a, "import ", 7) != 0) {
+        if (strlen(line) != 0 && strncmp(a, "import ", 7) != 0) {
             strcat(text, line);
             strcat(text, "\n");
         }
@@ -498,6 +544,7 @@ void build (char * file, char * output) {
             if (get(& texts, file)) {
                 imported = realloc(imported, (imported_length + 1) * sizeof_char_p);
                 imported[imported_length++] = file;
+                memmove(& imports[0], & imports[1], --imports_length * sizeof_char_p);
             }
         }
     }
@@ -505,7 +552,8 @@ void build (char * file, char * output) {
     for (int i = 0; i < imported_length; i++) {
         length += strlen(get(& texts, imported[i]));
     }
-    char text[length];
+    char * text = malloc(length);
+    text[0] = '\0';
     for (int i = 0; i < imported_length; i++) {
         strcat(text, get(& texts, imported[i]));
     }

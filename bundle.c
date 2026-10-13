@@ -57,6 +57,20 @@ void set (map * a, char * key, char * value) {
     a->pairs[a->length++] = p;
 }
 
+char * replaces (char * chars, char * match, char * next) {
+    char * p = strstr(chars, match);
+    int len1 = strlen(match);
+    int len2 = strlen(next);
+    while (p) {
+        if (len1 != len2) {
+            memmove(p + len2, p + len1, strlen(p + len1) + 1);
+        }
+        memcpy(p, next, len2);
+        p = strstr(chars, match);
+    }
+    return chars;
+}
+
 char * lstrip (char * str) {
     while (* str == '\t' || * str == ' ') {
         str++;
@@ -139,26 +153,26 @@ char * substrs (char * str, int start) {
 }
 
 char * resolve (char * f, char * file) {
-    if (strncmp(f, "./", 2) == 0) {
-        f += 2;
+    while (strncmp(f, "../", 3) == 0) {
+        f = substrs(f, 3);
+        file = substr(file, 0, strrchr(file, '/') - file);
     }
-    char i = f[0];
-    if (i != '.' && i != '/') {
-        int last = strrchr(file, '/') - file;
-        int length = last + strlen(f) + 2;
-        char * str = malloc(length);
-        snprintf(str, length, "%s%s%s", substr(file, 0, last), "/", f);
-        f = str;
-    } else if (strncmp(f, "../", 3) == 0) {
-        while (strncmp(f, "../", 3) == 0) {
-            f = substrs(f, 3);
-            file = substr(file, 0, strrchr(file, '/') - file);
+    int last = strrchr(file, '/') - file;
+    int length = last + strlen(f) + 2;
+    char * str = malloc(length);
+    snprintf(str, length, "%s%s%s", substr(file, 0, last), "/", f);
+    f = str;
+    char treats[7][2] = {"", "/", "", "", "/", "\\", ""};
+    char tricks[7][4] = {"~", ":", "./", ".\\", "//", "\\\\", "../"};
+    for (int i = 0, length = sizeof(treats) / sizeof(treats[0]); i < length; i++) {
+        char * treat = treats[i];
+        char * trick = tricks[i];
+        while (strstr(f, trick)) {
+            f = replaces(f, trick, treat);
         }
-        int last = strrchr(file, '/') - file;
-        int length = last + strlen(f) + 2;
-        char * str = malloc(length);
-        snprintf(str, length, "%s%s%s", substr(file, 0, last), "/", f);
-        f = str;
+    }
+    while (f[0] == '/') {
+        f = substrs(f, 1);
     }
     if (strcmp(f + strlen(f) - 3, ".js") != 0) {
         f = realloc(f, strlen(f) + 4);

@@ -171,33 +171,16 @@ char * resolve (char * f, char * file) {
             f = replaces(f, trick, treat);
         }
     }
-    while (f[0] == '/') {
+    char i = f[0];
+    while (i == '/' || i == '\\') {
         f = substrs(f, 1);
+        i = f[0];
     }
     if (strcmp(f + strlen(f) - 3, ".js") != 0) {
         f = realloc(f, strlen(f) + 4);
         strcat(f, ".js");
     }
     return f;
-}
-
-char * substitute (char * match, char * next, char * text) {
-    int a;
-    int i = strlen(match);
-    int j = strlen(next);
-    text = realloc(text, strlen(text) * j / i);
-    char * p = strstr(text, match);
-    while (p) {
-        a = p - text;
-        if (strchr(base64, text[a + i]) || (a != 0 && (strchr(base64, text[a - 1]) || strchr("\"'.", text[a - 1])))) {
-            p = strstr(text + a + i, match);
-        } else {
-            memmove(text + a + j, p + i, strlen(text + a + i) + 1);
-            memcpy(text + a, next, j);
-            p = strstr(text + a + j, match);
-        }
-    }
-    return text;
 }
 
 void parse (char * file, map * modules, map * texts) {
@@ -474,17 +457,30 @@ void parse (char * file, map * modules, map * texts) {
             char ** split = splits(exported[j], " ", & exported_length);
             char * named = split[0];
             char * name = split[1];
+            int len = strlen(path) + 2;
+            char * next = malloc(len);
+            snprintf(next, len, "%s%s", "_", path);
             char * module = get(& defaults, f);
-            if (module && strcmp(module, name) == 0) {
-                int len = strlen(path) + 2;
-                char * next = malloc(len);
-                snprintf(next, len, "%s%s", "_", path);
-                text = substitute(name, next, text);
-            } else {
-                int len = strlen(named) + strlen(path) + 2;
-                char * next = malloc(len);
-                snprintf(next, len, "%s%s%s", named, "_", path);
-                text = substitute(name, next, text);
+            if (!module || strcmp(module, name) != 0) {
+                len = strlen(named) + strlen(path) + 2;
+                char * str = malloc(len);
+                snprintf(str, len, "%s%s", named, next);
+                next = str;
+            }
+            int k;
+            int l = strlen(name);
+            int m = strlen(next);
+            text = realloc(text, strlen(text) * m / l);
+            char * p = strstr(text, name);
+            while (p) {
+                k = p - text;
+                if (strchr(base64, text[k + l]) || (k != 0 && (strchr(base64, text[k - 1]) || strchr("\"'.", text[k - 1])))) {
+                    p = strstr(text + k + l, name);
+                } else {
+                    memmove(text + k + m, p + l, strlen(text + k + l) + 1);
+                    memcpy(text + k, next, m);
+                    p = strstr(text + k + m, name);
+                }
             }
         }
     }
@@ -570,6 +566,43 @@ void build (char * file, char * output) {
     text[0] = '\0';
     for (int i = 0; i < imported_length; i++) {
         strcat(text, get(& texts, imported[i]));
+    }
+    if (strlen(text) > 0) {
+        text = substr(text, 0, strlen(text) - 1);
+    }
+    if (strcmp(output + strlen(output) - 5, ".html") == 0) {
+        int len = strlen(text) + 59;
+        char * str = malloc(len);
+        snprintf(str, len, "%s%s%s", "<!doctype html><html><body><script>", text, "</script></body></html>");
+        text = str;
+        FILE * f = fopen(output, "r");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            length = ftell(f);
+            rewind(f);
+            char * t = malloc(length + 1);
+            fread(t, 1, length, f);
+            fclose(f);
+            char * ip = strstr(t, "<script");
+            char * jp = strstr(t, "</script");
+            if (!ip || !jp) {
+                ip = strstr(t, "</body");
+                if (ip) {
+                    int i = ip - t;
+                    len = strlen(text) + strlen(t) - 40;
+                    char * str = malloc(len);
+                    snprintf(str, len, "%s%s%s", substr(t, 0, i), substr(text, 27, strlen(text) - 41), substrs(t, i));
+                    text = str;
+                }
+            } else {
+                int i = ip - t;
+                int j = jp - t;
+                len = strlen(text) + strlen(t) + i - j - 49;
+                char * str = malloc(len);
+                snprintf(str, len, "%s%s%s", substr(t, 0, i), substr(text, 27, strlen(text) - 41), substrs(t, j + 9));
+                text = str;
+            }
+        }
     }
     FILE * f = fopen(output, "w");
     if (f) {

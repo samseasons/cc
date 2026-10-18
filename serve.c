@@ -48,48 +48,46 @@ void serve (char * folder, int port) {
         char file[length + 1];
         strncpy(file, p, length);
         file[length] = '\0';
-        if (file[0] != '/' || strstr(file, "..")) {
-            continue;
-        }
-        while ((p = strstr(file, "%20"))) {
-            memcpy(p, " ", 1);
-            memmove(p + 1, p + 3, strlen(p + 3) + 1);
-        }
-        length = strlen(folder) + strlen(file) + 1;
-        char * path = malloc(length);
-        char type[23];
-        int found = 0;
-        char * ip = strrchr(file, '.');
-        if (ip) {
-            i = ip - file + 1;
-            char * extension = substr(file, i, strlen(file) - i);
-            for (int i = 0, len = sizeof(types) / sizeof(types[0]); i < len; i++) {
-                if (strcmp(types[i][0], extension) == 0) {
-                    snprintf(path, length, "%s%s", folder, file);
-                    strcpy(type, types[i][1]);
-                    found = 1;
-                    break;
+        if (file[0] == '/' && !strstr(file, "..")) {
+            printf("%s\n", file);
+            while ((p = strstr(file, "%20"))) {
+                memcpy(p, " ", 1);
+                memmove(p + 1, p + 3, strlen(p + 3) + 1);
+            }
+            length = strlen(folder) + strlen(file) + 1;
+            char * path = malloc(length);
+            char type[23] = {};
+            char * ip = strrchr(file, '.');
+            if (ip) {
+                i = ip - file + 1;
+                char * extension = substr(file, i, strlen(file) - i);
+                for (int i = 0, len = sizeof(types) / sizeof(types[0]); i < len; i++) {
+                    if (strcmp(types[i][0], extension) == 0) {
+                        snprintf(path, length, "%s%s", folder, file);
+                        strcpy(type, types[i][1]);
+                        break;
+                    }
                 }
             }
-        }
-        if (found == 0) {
-            length = strlen(folder) + strlen(index) + 1;
-            path = realloc(path, length);
-            snprintf(path, length, "%s%s", folder, index);
-            strcpy(type, "text/html");
-        }
-        FILE * f = fopen(path, "r");
-        if (f) {
-            length = strlen(type) + 24;
-            char * header = malloc(length);
-            snprintf(header, length, "%s%s%s", "HTTP/1.\ncontent-type:", type, "\n\n");
-            send(client, header, length - 1, 0);
-            while ((length = fread(buffer, 1, 4096, f)) > 0) {
-                if (send(client, buffer, length, MSG_NOSIGNAL) == -1) {
-                    break;
-                }
+            if (type[0] == '\0') {
+                length = strlen(folder) + strlen(index) + 1;
+                path = realloc(path, length);
+                snprintf(path, length, "%s%s", folder, index);
+                strcpy(type, "text/html");
             }
-            fclose(f);
+            FILE * f = fopen(path, "r");
+            if (f) {
+                length = strlen(type) + 24;
+                char * header = malloc(length);
+                snprintf(header, length, "%s%s%s", "HTTP/1.\ncontent-type:", type, "\n\n");
+                send(client, header, length - 1, 0);
+                while ((length = fread(buffer, 1, 4096, f)) > 0) {
+                    if (send(client, buffer, length, MSG_NOSIGNAL) == -1) {
+                        break;
+                    }
+                }
+                fclose(f);
+            }
         }
         close(client);
     }

@@ -162,19 +162,19 @@ char * resolve (char * f, char * file) {
     char * str = malloc(length);
     snprintf(str, length, "%s%s%s", substr(file, 0, last), "/", f);
     f = str;
-    char treats[7][2] = {"", "/", "", "", "/", "\\", ""};
-    char tricks[7][4] = {"~", ":", "./", ".\\", "//", "\\\\", "../"};
-    for (int i = 0, length = sizeof(treats) / sizeof(treats[0]); i < length; i++) {
-        char * treat = treats[i];
-        char * trick = tricks[i];
-        while (strstr(f, trick)) {
-            f = replaces(f, trick, treat);
-        }
+    int i = 0;
+    char treats[6][2] = {"", "/", "", "", "", "/"};
+    char tricks[6][3] = {":", "\\", "~", "..", "./", "//"};
+    for (int length = sizeof(treats) / sizeof(treats[0]) - 1; i < length; i++) {
+        f = replaces(f, tricks[i], treats[i]);
     }
-    char i = f[0];
-    while (i == '/' || i == '\\') {
+    char * treat = treats[i];
+    char * trick = tricks[i];
+    while (strstr(f, trick)) {
+        f = replaces(f, trick, treat);
+    }
+    if (f[0] == '/') {
         f = substrs(f, 1);
-        i = f[0];
     }
     if (strcmp(f + strlen(f) - 3, ".js") != 0) {
         f = realloc(f, strlen(f) + 4);
